@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+*.DS_Store
+# 音视频样本/产物不入库（本仓库只含 skill 源码与文档）
+*.wav
+*.mp4
+*.zip
+# 外部索引 DB 不入库（位于 ~/.workbuddy/sfx_library/，非本仓库）
