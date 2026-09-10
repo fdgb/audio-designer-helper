@@ -6,8 +6,6 @@ description: >-
   (双方清晰可辨、杜绝 ducking/sidechain)，最后导出 mix 过后的音乐音效分轨时使用。
   覆盖标准逐轨匹配、合并参考、Idle音效匹配、音乐作氛围 四种场景，含 ffmpeg 滤波器链、
   两段式 loudnorm 精确匹配、stereo 保护、峰值限制等全部经验与踩坑点。
-  另含 VO 语音修复模块：齿音(deesser)、削波(adeclip)、喷麦/口水音(adeclick)、底噪(afftdn/arnndn)，
-  诊断先行 + 固定处理顺序，适用于配音/对白/游戏语音包清理。
   另含音效库管理模块：对大规模音效库(数十万文件)做一遍索引后，支持按关键词/库/格式检索、
   库健康审计(格式/垃圾文件/非音频混杂)、重复文件发现(size 候选 + hash 精确)、ffprobe 规格画像
   (采样率/位深/声道/时长)，全部只读、索引外置。
@@ -21,8 +19,8 @@ description: >-
   另含 CG/视频音乐情绪分析模块：自动抽音轨并按窗口提取声学描述子，映射成 valence–arousal
   情绪时间线 + 近似 tempo，用于审外包 CG 音乐情绪弧（需 numpy，无训练模型，标签为粗粒度启发式）。
   可配合 MixForge 桌面工具做参考作品分析；导出分轨可直接进 Wwise/FMOD 引擎。
-description_zh: 音频设计师助手（Audio Designer Helper）：音乐音效响度匹配、融合混音、语音修复、音效库管理、频段相似检索与音乐情绪分析
-description_en: Audio Designer Helper — Music + SFX loudness match & mix, VO cleanup, SFX library mgmt, band-similarity search, CG music emotion analysis
+description_zh: 音频设计师助手（Audio Designer Helper）：音乐音效响度匹配、融合混音、音效库管理、频段相似检索与音乐情绪分析
+description_en: Audio Designer Helper — Music + SFX loudness match & mix, SFX library mgmt, band-similarity search, CG music emotion analysis
 disable: false
 agent_created: true
 ---
@@ -34,8 +32,6 @@ agent_created: true
 - 用户要求：`让 版本_X 完全匹配 版本_Y 的响度` → `混音` → `导出 mix 版本分轨`
 - 触发词：混音、响度匹配、MIX 版本、音乐音效分轨、版本_X 去匹配 版本_Y、融合、不打架、不能盖住
 - 也适用于：提供的参考是单个已混好的合并文件、或只有音效需要匹配、或音乐只作氛围
-- **语音修复触发词**：齿音、去齿音、de-ess、削波、爆音、破音、底噪、降噪、语音清理、配音修复、VO cleanup →
-  走「VO 语音修复模块」（见下文），详细流程在 `references/voice_cleanup.md`
 - **音效库管理触发词**：音效库管理、盘库、找音效、搜音效、SFX library、音效库扫描、音效去重、规格审计、音效库报告 →
   走「音效库管理模块」（见下文），详细流程在 `references/sfx_library.md`；脚本 `scripts/sfx_library.py`
 - **音效频段相似检索触发词**：相似音效、按频段找、频段检索、sound-alike、类比查找、听感接近、找类似的音效 →
@@ -209,60 +205,10 @@ ffmpeg -hide_banner -y -i "<matched_SFX.wav>" -af "highpass=f=80:p=2,volume=<sfx
 
 ---
 
-## VO 语音修复模块（齿音 / 削波 / 底噪）
-
-> 独立模块，可单独触发；修完的干净语音可回到主工作流按「语音 = 音乐基准 -2dB」进混音。
-> 完整参数、判定标准、监听调参技巧见 `references/voice_cleanup.md`；脚本 `scripts/voice_cleanup.py`。
-
-### 原则
-1. **诊断先行，最小干预**：先测 LUFS/TP + astats(Flat factor/Peak count) + 静默段噪声地板，只修确诊的问题。
-2. **处理顺序固定，不可乱**：`adeclip(修削波) → adeclick(修喷麦/口水音) → highpass=f=80(去轰鸣) → afftdn/arnndn(降底噪) → deesser(去齿音) → 可选压缩/响度 → afade 起止`。
-   顺序错误会互相污染（如先 deess 后降噪 → 齿音越修越明显）。
-3. **VO 跟随源声道数**（游戏语音常为 mono），不写 `-ac`——"永远 stereo" 铁律只约束 MUS/SFX 分轨。
-4. **禁 dynaudnorm，speechnorm 同禁**（自动增益骑乘）；动态用 `acompressor` 轻压，响度用迭代 volume / 两段式 loudnorm。
-5. **auto 默认不修齿音**（齿音机器不可判定，盲修伤辅音）；确需则 `auto ... --deess 0.15` 显式开启。
-6. **诊断含齿音频谱提示**：`diagnose` 额外输出 5–10kHz 能量占比（dB，如"偏高, 建议试 --deess 0.10~0.15"）——仅提示性，绝不机判，故 auto 仍不自动去齿音。
-7. **adeclip OOM 防护**：平顶削波 `FlatFactor>0.9` 且峰值 `>-10dB`（近方波/整段削波）时，`auto`/`process` 自动跳过 adeclip（否则进程被系统 OOM 杀掉 137），并打印"建议重录"；轻/局部削波正常修复。
-
-### 快速命令
-```bash
-# 诊断
-python scripts/voice_cleanup.py diagnose VO_raw.wav
-# 自动按诊断结果裁剪链路处理（最小干预: 只修机判项[削波/底噪]; 起止fade默认开;
-#   齿音/喷麦需 --deess / --declick 显式开, 不盲修）
-python scripts/voice_cleanup.py auto VO_raw.wav VO_clean.wav
-# 显式开齿音 + 响度对齐 + 起止fade
-python scripts/voice_cleanup.py auto VO_raw.wav VO_clean.wav --deess 0.15 --target-lufs -18
-# 一键客观验收 (处理前→后 对照 + PASS/⚠️)
-python scripts/voice_cleanup.py verify VO_raw.wav VO_clean.wav
-# 文件夹批量验收扫描 (逐文件 LUFS/TP/噪声地板 + 削波/底噪标记, 可导出 CSV)
-python scripts/voice_cleanup.py report VO_folder/ --csv VO_report.csv
-# 文件夹批量自动修复 (每首按诊断裁剪链路, 输出到 dst_dir, 写 _batch_report.csv)
-python scripts/voice_cleanup.py batch VO_raw_folder/ VO_clean_folder/ --target-lufs -18
-# 全问题素材手动全链路
-ffmpeg -hide_banner -y -i VO_raw.wav \
-  -af "adeclip,adeclick,highpass=f=80:p=2,afftdn=nr=12:nf=-48:tn=1,deesser=i=0.15:m=0.5:f=0.5,alimiter=limit=0dB:level=false" \
-  -acodec pcm_s24le -ar 48000 VO_clean.wav
-```
-
-### 参数安全区（超出必出 artifact）
-| 滤波器 | 起步值 | 危险线 | 过量症状 |
-|--------|--------|--------|----------|
-| `afftdn nr` | 10–12 | >18 | 水声/金属声、尾音被啃 |
-| `deesser i` | 0.1–0.2 | >0.3 | 大舌头、s 变 th |
-| `adeclip` | 默认 | — | 修复后峰值>0，需接 alimiter |
-| `adeclick` | 默认(window=55) | threshold>6 | 吃掉正常瞬态/字头 |
-
-- deesser 调参技巧：先用 `s=e` 监听模式单听"被删掉的成分"，应只有嘶嘶声；听到完整辅音说明强度过大。
-- 重噪救急：`arnndn=m=模型.rnnn`（RNN 降噪，需 .rnnn 模型文件，不内置），afftdn 压不住时再上（`--arnndn` 传入）。
-- 喷麦/爆破音：`adeclick` 修宽带脉冲，highpass 去不掉——游戏配音录得糙时高频用。
-- 验证：处理前后各测 LUFS/TP/噪声地板三个数；`verify` 命令一键出对照；songsee 出频谱对比图；试听句尾气声、密集 s 音、静默段、喷麦句首。
-
----
 
 ## 音效库管理模块（检索 / 审计 / 去重 / 规格画像）
 
-> 独立模块，可单独触发；找原料 → 主工作流加工 →（含人声则）VO 修复 → 规格审计，构成完整闭环。
+> 独立模块，可单独触发；找原料 → 主工作流加工 → 规格审计，构成完整闭环。
 > 完整命令、工作流、坑见 `references/sfx_library.md`；脚本 `scripts/sfx_library.py`。
 
 ### 设计原则（红线）
@@ -493,11 +439,9 @@ python scripts/music_emotion.py "某CG.mp4" --json
 
 ## 参考脚本
 - `scripts/standard_workflow.py`：标准逐轨匹配 + 混音 + 导出 的参考实现（参数化，可直接改 TASKS 复用）
-- `scripts/voice_cleanup.py`：VO 语音修复（diagnose 诊断[含齿音频谱提示] / report 文件夹批量验收扫描[可导出CSV] / batch 文件夹批量自动修复[写_batch_report.csv] / process 手动链路 / auto 自动裁剪链路 / verify 客观验收），支持 --declip --declick --denoise --arnndn --deess --target-lufs --fade，auto 默认不去齿音（需显式 --deess），adeclip 带大面积平顶 OOM 防护
 - `scripts/sfx_library.py`：音效库管理（scan 建索引 / search 检索 / report 健康报告 / dupes 找重复[size|hash] / specs ffprobe 规格画像 / bandsim 频段相似检索[需 numpy, 支持 --like 缩范围 / --export 打包到桌面] / compsim 材质·合成设计相似检索[需 numpy, 与 bandsim 互补, 按材质指纹余弦相似, 支持 --like/--export/--threshold 兜底] / analyze 参考音效全面声学分析[含材质/合成设计指纹, 需 numpy] / prewarm 全库频段缓存预热[需 numpy]），索引默认存 `~/.workbuddy/sfx_library/index.db`，只读不改动库
 - `scripts/music_emotion.py`：CG/视频音乐情绪分析（自动抽音轨 → 分窗 → valence–arousal 情绪时间线 + 近似 tempo，需 numpy，无训练模型）
 - `references/edge_cases.md`：四种场景的判定树与完整命令示例
-- `references/voice_cleanup.md`：语音修复完整工作流（判定标准、处理顺序原理、逐滤波器参数与调法、语音专属坑）
 - `references/sfx_library.md`：音效库管理完整工作流（设计原则、命令速查、典型闭环、去重坑、规格审计、已知坑）
 - `references/sfx_similarity.md`：音效频段相似检索完整工作流（频段模型、两种查询、缓存、已知坑）
 - `references/music_emotion.md`：CG/视频音乐情绪分析完整工作流（描述子含义、用法、诚实边界、已知坑）
@@ -507,7 +451,7 @@ python scripts/music_emotion.py "某CG.mp4" --json
 
 ## 新增能力（2026-09 更新）
 
-> 以下为本期新增、独立于上述模块的离线检索与校准能力。旧模块（响度匹配 / VO 修复 / 音效库管理 / bandsim / compsim / 音乐情绪）保持不变。
+> 以下为本期新增、独立于上述模块的离线检索与校准能力。旧模块（响度匹配 / 音效库管理 / bandsim / compsim / 音乐情绪）保持不变。
 
 ### 具名概念混合检索（scripts/hybrid_search.py）
 针对「门 / 撞击 / 雷 / 警报」等**具名概念**，纯频谱相似度误检率高（会把单次瞬态的敲门、对话误判为门）。改用**混合检索**：文件名关键词过滤（door / slam / impact / hit / knock / thud / bang / metal / wood / crate / hatch / shutter）叠加 8 段频谱声学门控（宽频能量 ≥3 段 + 单段 < 0.60 去窄带 + 中低频体 + 质心 250–4000Hz + 时长 < 2.5s）。实测在全库 34 万+ 文件里从 62319 关键词候选收敛到 962 个真门/撞击/敲击，Top40 全部真相关。
