@@ -1,0 +1,5 @@
+# audio-designer-assistant dependencies
+# ffmpeg / ffprobe must be installed separately and on PATH
+numpy>=1.24
+soundfile>=0.12
+pyloudnorm>=0.1.0

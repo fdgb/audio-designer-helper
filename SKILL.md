@@ -501,3 +501,32 @@ python scripts/music_emotion.py "某CG.mp4" --json
 - `references/sfx_library.md`：音效库管理完整工作流（设计原则、命令速查、典型闭环、去重坑、规格审计、已知坑）
 - `references/sfx_similarity.md`：音效频段相似检索完整工作流（频段模型、两种查询、缓存、已知坑）
 - `references/music_emotion.md`：CG/视频音乐情绪分析完整工作流（描述子含义、用法、诚实边界、已知坑）
+
+
+---
+
+## 新增能力（2026-09 更新）
+
+> 以下为本期新增、独立于上述模块的离线检索与校准能力。旧模块（响度匹配 / VO 修复 / 音效库管理 / bandsim / compsim / 音乐情绪）保持不变。
+
+### 具名概念混合检索（scripts/hybrid_search.py）
+针对「门 / 撞击 / 雷 / 警报」等**具名概念**，纯频谱相似度误检率高（会把单次瞬态的敲门、对话误判为门）。改用**混合检索**：文件名关键词过滤（door / slam / impact / hit / knock / thud / bang / metal / wood / crate / hatch / shutter）叠加 8 段频谱声学门控（宽频能量 ≥3 段 + 单段 < 0.60 去窄带 + 中低频体 + 质心 250–4000Hz + 时长 < 2.5s）。实测在全库 34 万+ 文件里从 62319 关键词候选收敛到 962 个真门/撞击/敲击，Top40 全部真相关。
+- 用法：`python scripts/hybrid_search.py --kw door --db <index.db> --top 40`
+- 与 bandsim / compsim 的关系：bandsim / compsim 解决「找听感 / 合成手法相近」；hybrid_search 解决「按名字找确定概念」。具名概念优先 hybrid，模糊相似用 band / compsim。
+
+### 粉红噪音校准（scripts/gen_pinknoise.py）
+任何平衡 / 响度对齐问题，先以粉红噪音锚定监听。生成 Paul Kellet 粉红噪音并归一化到目标 LUFS（默认 -23 LUFS），作监听校准参考。
+- 用法：`python scripts/gen_pinknoise.py --out pink.wav --lufs -23 --sr 48000 --dur 30`
+
+### 响度分析（scripts/analyze_loudness.py）
+对单条音频输出 LUFS / 真峰 dBTP / RMS / 频谱质心，用于交付前客观验收。
+- 用法：`python scripts/analyze_loudness.py path/to/file.wav`
+
+### 离线索引器（scripts/build_index.py）
+为 hybrid_search 建库：扫描本地音效库，产出 `index.db`（files / specs / bandprof / matprof）。只读、不改动库内文件；`--db` 参数化、路径脱敏。
+
+### 能力账本（CAPABILITY-LEDGER.json）
+声明各能力实测状态与独立复验命令，供二次检验（capability-verifier）对账「声称能用 vs 实测能用」。
+
+### 依赖
+新增脚本依赖 `numpy` + `soundfile` + `pyloudnorm`（`ffmpeg` 仍用于响度测量）。详见 `requirements.txt`。

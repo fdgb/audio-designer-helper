@@ -1,0 +1,51 @@
+{
+  "skill": "audio-designer-assistant",
+  "version": "0.1.0",
+  "updated": "2026-09-09",
+  "ledger_schema": "claimed_status + independent_verify; verify exit: 0=一致 2=真漂移需修 3=复验异常非功能坏",
+  "capabilities": [
+    {
+      "id": "build_index",
+      "claim": "离线把本地音效目录索引为 index.db（8段频谱+centroid+flux+规格），纯 ffmpeg+numpy，无 ML",
+      "status": "verified",
+      "verify": "python scripts/build_index.py /tmp/x --db /tmp/x/index.db 后 sqlite 查 bandprof 行数>0",
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "hybrid_search",
+      "claim": "关键词元数据 + bandprof 声学门控，检索命名概念音效，滤掉窄带/纯音/无body/过长",
+      "status": "verified",
+      "verify": "对含 2 宽带冲击+1 纯音的库跑 hybrid_search，应返回 2 条、滤掉纯音",
+      "last_verified": "2026-09-09",
+      "note": "真实 34 万文件库 door/impact 类命中 962 条"
+    },
+    {
+      "id": "gen_pinknoise",
+      "claim": "生成目标 LUFS 粉红噪音锚 wav（默认 -23 LUFS / 48k / 24bit 立体声）",
+      "status": "verified",
+      "verify": "python scripts/gen_pinknoise.py --out t.wav --lufs -23 --dur 2 后 analyze_loudness 读回 ≈ -23.00 LUFS",
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "analyze_loudness",
+      "claim": "测整体 LUFS / 真峰值 dBTP / RMS / 频谱质心",
+      "status": "verified",
+      "verify": "对 gen_pinknoise 产物运行返回 LUFS≈-23、centroid 合理",
+      "last_verified": "2026-09-09"
+    },
+    {
+      "id": "spectral_similarity_search",
+      "claim": "给参考音找频谱/材质相似的音效（bandprof/compsim 向量检索）",
+      "status": "planned",
+      "verify": "未含在本包；需补 bandprof 向量检索脚本",
+      "last_verified": null
+    },
+    {
+      "id": "gameaudio_architecture",
+      "claim": "FMOD/Wwise 事件架构、自适应音乐参数、空间音频、音频预算等方案输出",
+      "status": "knowledge",
+      "verify": "知识层，需用户引擎环境落地后实测；本包不承诺未落地能力",
+      "last_verified": null
+    }
+  ]
+}

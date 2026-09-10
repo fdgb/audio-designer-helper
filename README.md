@@ -45,3 +45,14 @@ python scripts/music_emotion.py "某CG.mp4" --win 8
 - bandsim / compsim 按频谱与材质相似，不按语义理解（「两个都是开门声」这类语义需靠文件名或 `--like` 圈定）。
 - 全库任意秒回检索需先 `prewarm`（约 3–4 小时，可断点续跑）；不预热则把候选限定到某个库 / 子类更快。
 - 仓库仅含技能定义与脚本（`models/cb.rnnn` 为语音降噪模型），不含音效库素材本身。
+
+
+## 新增能力（2026-09 更新）
+
+- **具名概念混合检索（scripts/hybrid_search.py）**：对「门 / 撞击 / 雷 / 警报」等具名概念，用「文件名关键词 + 8 段频谱声学门控」混合检索，解决纯频谱相似度误检。与 bandsim / compsim（找相似）互补。
+- **粉红噪音校准（scripts/gen_pinknoise.py）**：一键生成 -23 LUFS 粉红噪音，用于监听校准锚点。
+- **响度分析（scripts/analyze_loudness.py）**：单文件 LUFS / 真峰 / RMS / 质心验收。
+- **离线索引器（scripts/build_index.py）**：为混合检索建 `index.db`（只读、脱敏、参数化）。
+- **能力账本（CAPABILITY-LEDGER.json）**：声明能力实测状态，供二次检验对账。
+
+新增脚本依赖：`pip install numpy soundfile pyloudnorm`（见 `requirements.txt`）。
